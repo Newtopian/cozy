@@ -1,19 +1,55 @@
 from datetime import datetime
-from typing import Callable, Tuple, Any
+from os.path import expanduser
+from pathlib import Path
+
+home = Path(expanduser("~"))
 
 import PySimpleGUI as sg
 from PySimpleGUI import Window, Element
 
-from cozy.model.models import Site, Staff, Chair
+from cozy.model.models import Site, Staff, Chair, Client
 
-site: Site = Site(capacity=25, name="Cozy", staff=[Staff(name="Alice"), Staff(name="Bob")], chairs=[Chair(id=1, occupant=None, since=None), Chair(id=2, occupant=None, since=None)])
+# site: Site = Site(capacity=25, name="Cozy", staff=[Staff(name="Alice"), Staff(name="Bob")], chairs=[Chair(id=1, occupant=None, since=None), Chair(id=2, occupant=None, since=None)])
 
-while len(site.chairs) < site.capacity:
-    site.chairs.append(Chair(id=len(site.chairs) + 1, occupant=None, since=None))
+# load the site from the default location :
+cozy_home = home / '.cozy'
+cozy_default_site_file = cozy_home / 'empty_site.json'
+cozy_data_folder = cozy_home / 'data'
+cozy_today_site_folder = cozy_home / 'data' / datetime.now().strftime('%Y-%m-%d')
+cozy_today_site_file = cozy_today_site_folder / 'site_state.json'
 
-print(site.json())
+if not cozy_home.exists():
+    cozy_home.mkdir()
+
+if not cozy_data_folder.exists():
+    cozy_data_folder.mkdir()
+
+if not cozy_default_site_file.exists():
+    default_site: Site = Site(capacity=25, name="Cozy", staff=[], chairs=[])
+    while len(default_site.chairs) < default_site.capacity:
+        default_site.chairs.append(Chair(id=len(default_site.chairs) + 1, occupant=None, since=None))
+    cozy_default_site_file.write_text(data=default_site.model_dump_json(indent=2), encoding='utf-8')
+else:
+    default_site: Site = Site.model_validate_json(cozy_default_site_file.read_text(encoding='utf-8'))
+
+# now we load the actual site or take a copy of the default site
+if not cozy_today_site_folder.exists():
+    cozy_today_site_folder.mkdir()
+    cozy_today_site_file.write_text(data=default_site.model_dump_json(indent=2), encoding='utf-8')
+
+site: Site = Site.model_validate_json(cozy_today_site_file.read_text(encoding='utf-8'))
+
 sg.theme('DarkAmber')  # Add a touch of color
 staff_button_list = [sg.Button(s.name) for s in site.staff]
+
+
+def save_staff():
+    default_site.staff = [staff for staff in site.staff]
+    cozy_default_site_file.write_text(data=default_site.model_dump_json(indent=2), encoding='utf-8')
+
+
+def save_site():
+    cozy_today_site_file.write_text(data=site.model_dump_json(indent=2), encoding='utf-8')
 
 
 # All the stuff inside your window.
@@ -26,7 +62,6 @@ def create_window() -> Window:
             sg.Button('Woops!', enable_events=True, key='StaffCancelAdd', visible=False),
             sg.InputText(disabled=True, enable_events=True, key='StaffName', visible=False)
         ],
-
     ]
 
     layout.extend(create_chairs())
@@ -83,25 +118,8 @@ while True:
         staff_button_list = [sg.Button(s.name) for s in site.staff]
         window.close()
         window = create_window()
-
-    if event == 'SeatCount':
-        count = window['SeatCount']
-        try:
-            _c = int(values['SeatCount'])
-
-            if _c < len(site.chairs) and site.chairs:
-                print(f'SeatCount: Update -- removing chairs from site until count is {_c}')
-                while len(site.chairs) > _c:
-                    print(f'Seat count is {len(site.chairs)} > {_c}... removing one')
-                    site.chairs.pop()
-            elif _c > len(site.chairs):
-                print(f'SeatCount: Update -- adding chairs to site until count is {_c}')
-                while len(site.chairs) < _c:
-                    site.chairs.append(Chair(id=len(site.chairs), occupant=None, since=None))
-            window.close()
-            window = create_window()
-        except ValueError:
-            pass
+        save_staff()
+        save_site()
 
     if event in ['StaffCancelAdd']:
         add_btn = window['AddNewStaff']
@@ -119,12 +137,13 @@ while True:
         print(f'Chair {chair.id} is occupied: {values[event]}')
         if values[event]:
             chair.since = datetime.now()
-            chair.occupant = occupant
+            chair.occupant = Client.parse_obj({'name': occupant})
         else:
             chair.occupant = None
             chair.since = None
         window[str(event).replace('Occupied', 'Since')].update(str(chair))
         window[str(event).replace('Occupied', 'Occupant')].update(str(chair.occupant if chair.occupant else ''))
+        save_site()
 
 
 window.close()
