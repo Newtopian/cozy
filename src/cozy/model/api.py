@@ -29,7 +29,7 @@ class SiteController:
 
         if not self.current_event_log_file.exists():
             # finally we will start a new EventLog
-            self.event_log = EventLog(initial_site_state=self._site.model_copy(deep=True), events=[])
+            self.event_log = EventLog(initial_site_state=self._site.model_copy(deep=True))
         else:
             self.event_log = EventLog.model_validate_json(self.current_event_log_file.read_text(encoding='utf8'))
 

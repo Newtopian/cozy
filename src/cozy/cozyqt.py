@@ -1,7 +1,7 @@
 import math
 from os.path import expanduser
 from pathlib import Path
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QVBoxLayout, QWidget, QScrollArea, QGridLayout, QInputDialog, QMessageBox, QTextEdit, QBoxLayout, QPlainTextEdit, QProgressBar
 from datetime import datetime
 
@@ -13,13 +13,14 @@ site_api = SiteController(site_home=Path(expanduser("~")) / '.cozy_2')
 
 
 class ChairWidget(QWidget):
+    interactive = Signal()
+
     def __init__(self, chair: Chair):
         super().__init__()
         self._occupancy_button = None
         self.occupant_edit: QPlainTextEdit | None = None
         self._label = None
         self.chair = chair
-
         self.init_ui()
 
     def init_ui(self):
@@ -28,9 +29,9 @@ class ChairWidget(QWidget):
         self._label = QLabel(f"Chair {self.chair.id:>3}")
         layout.addWidget(self._label)
 
-        self.occupant_edit = QPlainTextEdit("", self)
+        self.occupant_edit = QPlainTextEdit(self.chair.occupant.name if self.chair.occupant else '', self)
         self.occupant_edit.textChanged.connect(self.editing_ocupy)
-        self.occupant_edit.setMaximumHeight(20)
+        self.occupant_edit.setMaximumHeight(30)
         self.occupant_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.occupant_edit.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
@@ -40,11 +41,17 @@ class ChairWidget(QWidget):
         self._occupancy_button.clicked.connect(self.toggle_occupancy)
         layout.addWidget(self._occupancy_button)
 
+        if self.chair.is_occupied:
+            self.occupy()
+        else:
+            self.release()
+
         self.setLayout(layout)
 
     def editing_ocupy(self):
         if self.chair.occupant is not None:
             self.chair.occupant.name = self.occupant_edit.toPlainText().strip()
+        self.interactive.emit()
 
     def occupy(self):
         if self.occupant_edit.toPlainText().strip() != "":
@@ -83,9 +90,16 @@ class ChairTrackingUI(QMainWindow):
 
     def staff_selected_handler(self, staff_name: str) -> None:
         site_api.active_staff = staff_name
+        for c in self._chair_widgets.values():
+            c.setEnabled(True)
 
     def staff_selected_cleared_handler(self) -> None:
         site_api.active_staff = None
+        for c in self._chair_widgets.values():
+            c.setEnabled(False)
+
+    def ui_interactive_handler(self) -> None:
+        self.staff_section.extend_grace_period()
 
     def init_ui(self):
         central_widget = QWidget(self)
@@ -116,6 +130,8 @@ class ChairTrackingUI(QMainWindow):
             col = (c.id - 1) % 2
             chair_widget = ChairWidget(c)
             grid_layout.addWidget(chair_widget, row, col)
+            chair_widget.setEnabled(False)
+            chair_widget.interactive.connect(self.ui_interactive_handler)
             self._chair_widgets[c.id] = chair_widget
 
         self.setGeometry(300, 300, 400, 300)

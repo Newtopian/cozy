@@ -1,4 +1,4 @@
-import sys
+from datetime import timedelta, datetime
 from PySide6.QtCore import QTimer, Qt, Signal, Slot
 from PySide6.QtGui import QIcon, QFont
 from PySide6.QtWidgets import (
@@ -28,10 +28,12 @@ class StaffProgressWidget(QWidget):
         self.add_staff_button = None
         self.staff_buttons_layout = None
         self.progress_label = None
-        self.progress_bar = None
+        self.progress_bar: QProgressBar | None = None
         self.staff_buttons = {}
         self.current_staff = None
         self.timer = None
+        self.grace_period_start = None
+        self.grace_period_duration = timedelta(seconds=5)
         self.active_time_seconds = 10
         self.timer_granularity_steps_per_seconds = 100
 
@@ -41,7 +43,7 @@ class StaffProgressWidget(QWidget):
         self.setWindowTitle("Staff Progress")
 
         # Progress bar (initially disabled)
-        self.progress_bar: QProgressBar = QProgressBar(self)
+        self.progress_bar = QProgressBar(self)
         self.progress_bar.setEnabled(False)
         self.progress_bar.setMaximum(self.timer_granularity_steps_per_seconds * self.active_time_seconds)  # 10-second progress
         self.progress_bar.setMinimum(0)
@@ -120,18 +122,25 @@ class StaffProgressWidget(QWidget):
         if self.timer and self.timer.isActive():
             self.timer.stop()
 
+        self.grace_period_start = datetime.utcnow()
         self.timer = QTimer(self)
         self.timer.setInterval(int(1000/self.timer_granularity_steps_per_seconds))  # 1-second interval
         self.timer.timeout.connect(self.update_progress)
         self.timer.start()
+
         self.staff_selected.emit(self.current_staff)
 
     def update_progress(self):
         if self.progress_bar.value() > 0:
-            self.progress_bar.setValue(self.progress_bar.value() - 1)
+            if datetime.utcnow() - self.grace_period_start > self.grace_period_duration:
+                self.progress_bar.setValue(self.progress_bar.value() - 1)
         else:
             # Progress bar finished, disable it and clear label, but allow restart
             self.current_staff = None
             self.progress_bar.setEnabled(False)
             self.progress_bar.setFormat("%p%")
             self.staff_selection_cleared.emit()
+
+    def extend_grace_period(self):
+        self.grace_period_start = datetime.utcnow()
+        self.progress_bar.setValue(self.progress_bar.maximum())
