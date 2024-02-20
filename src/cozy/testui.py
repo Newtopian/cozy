@@ -25,7 +25,7 @@ if not cozy_data_folder.exists():
     cozy_data_folder.mkdir()
 
 if not cozy_default_site_file.exists():
-    default_site: Site = Site(capacity=25, name="Cozy", staff=[], chairs=[])
+    default_site: Site = Site(capacity=50, name="Cozy", staff=[], chairs=[])
     while len(default_site.chairs) < default_site.capacity:
         default_site.chairs.append(Chair(id=len(default_site.chairs) + 1, occupant=None, since=None))
     cozy_default_site_file.write_text(data=default_site.model_dump_json(indent=2), encoding='utf-8')
